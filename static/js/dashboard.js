@@ -414,7 +414,10 @@ async function loadUsers() {
         tbody.innerHTML = '';
         
         users.forEach(user => {
-            const subUrl = `${window.location.origin}/sub/user/${user.subscription_token}`;
+            // 优先使用自定义后缀，否则使用系统token
+            const token = user.custom_slug || user.subscription_token;
+            const subUrl = `${window.location.origin}/sub/user/${token}`;
+            const isCustom = user.custom_slug ? '🔗' : '';
             const templateName = user.template_name || '默认';
             const row = document.createElement('tr');
             row.innerHTML = `
@@ -430,7 +433,7 @@ async function loadUsers() {
                 </td>
                 <td>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <code class="url-display" style="flex: 1;">${truncateUrl(subUrl, 40)}</code>
+                        <code class="url-display" style="flex: 1;" title="${user.custom_slug ? '自定义链接' : '系统生成链接'}">${isCustom}${truncateUrl(subUrl, 40)}</code>
                         <button class="copy-btn" onclick="copyToClipboard('${subUrl}')">📋 复制</button>
                     </div>
                 </td>
@@ -501,6 +504,7 @@ async function showEditUserModal(userId) {
         // 填充用户信息
         document.getElementById('editUserName').value = user.username;
         document.getElementById('editUserRemark').value = user.remark || '';
+        document.getElementById('editUserCustomSlug').value = user.custom_slug || '';
         
         // 填充模板下拉框
         const templateSelect = document.getElementById('editUserTemplate');
@@ -525,6 +529,7 @@ async function showEditUserModal(userId) {
 async function saveUserEdit() {
     const username = document.getElementById('editUserName').value.trim();
     const remark = document.getElementById('editUserRemark').value.trim();
+    const customSlug = document.getElementById('editUserCustomSlug').value.trim();
     const templateId = document.getElementById('editUserTemplate').value;
     
     if (!username) {
@@ -532,8 +537,14 @@ async function saveUserEdit() {
         return;
     }
     
+    // 验证自定义后缀格式
+    if (customSlug && !/^[a-zA-Z0-9_-]+$/.test(customSlug)) {
+        alert('自定义后缀只能包含字母、数字、下划线和中划线');
+        return;
+    }
+    
     try {
-        const updateData = { username, remark };
+        const updateData = { username, remark, custom_slug: customSlug || null };
         if (templateId) {
             updateData.template_id = parseInt(templateId);
         }

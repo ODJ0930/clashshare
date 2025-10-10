@@ -92,6 +92,7 @@ def manage_subscriptions():
             'id': s.id,
             'name': s.name,
             'subscription_token': s.subscription_token,
+            'custom_slug': s.custom_slug,
             'user_names': [u.username for u in s.users],  # 多个用户
             'user_count': len(s.users),
             'node_count': len(s.nodes),
@@ -141,6 +142,22 @@ def update_subscription(sub_id):
     data = request.get_json()
     if 'name' in data:
         sub.name = data['name']
+    if 'custom_slug' in data:
+        # 验证自定义后缀
+        custom_slug = data['custom_slug'].strip() if data['custom_slug'] else None
+        if custom_slug:
+            # 检查是否已存在（排除自己）
+            existing = Subscription.query.filter(
+                Subscription.custom_slug == custom_slug,
+                Subscription.id != sub_id
+            ).first()
+            if existing:
+                return jsonify({'success': False, 'message': '该自定义后缀已被使用'}), 400
+            # 验证格式（只允许字母、数字、下划线、中划线）
+            import re
+            if not re.match(r'^[a-zA-Z0-9_-]+$', custom_slug):
+                return jsonify({'success': False, 'message': '自定义后缀只能包含字母、数字、下划线和中划线'}), 400
+        sub.custom_slug = custom_slug
     if 'user_ids' in data:
         # 更新关联的用户
         user_ids = data['user_ids']
@@ -486,6 +503,7 @@ def manage_users():
             'id': u.id,
             'username': u.username,
             'subscription_token': u.subscription_token,
+            'custom_slug': u.custom_slug,
             'subscription_count': len(u.subscriptions),
             'node_count': sum(len(s.nodes) for s in u.subscriptions),
             'enabled': u.enabled,
@@ -547,6 +565,23 @@ def update_user(user_id):
     if 'remark' in data:
         user.remark = data['remark']
     
+    if 'custom_slug' in data:
+        # 验证自定义后缀
+        custom_slug = data['custom_slug'].strip() if data['custom_slug'] else None
+        if custom_slug:
+            # 检查是否已存在（排除自己）
+            existing = User.query.filter(
+                User.custom_slug == custom_slug,
+                User.id != user_id
+            ).first()
+            if existing:
+                return jsonify({'success': False, 'message': '该自定义后缀已被使用'}), 400
+            # 验证格式（只允许字母、数字、下划线、中划线）
+            import re
+            if not re.match(r'^[a-zA-Z0-9_-]+$', custom_slug):
+                return jsonify({'success': False, 'message': '自定义后缀只能包含字母、数字、下划线和中划线'}), 400
+        user.custom_slug = custom_slug
+    
     if 'template_id' in data:
         user.template_id = data['template_id'] if data['template_id'] else None
     
@@ -604,8 +639,11 @@ def regenerate_user_token(user_id):
 
 @app.route('/sub/user/<token>')
 def user_subscription(token):
-    """用户订阅接口"""
-    user = User.query.filter_by(subscription_token=token).first()
+    """用户订阅接口（支持自定义后缀和系统token）"""
+    # 先尝试用custom_slug查找，再用subscription_token查找
+    user = User.query.filter_by(custom_slug=token).first()
+    if not user:
+        user = User.query.filter_by(subscription_token=token).first()
     
     if not user or not user.enabled:
         return "Invalid subscription", 404
@@ -655,8 +693,11 @@ def user_subscription(token):
 
 @app.route('/sub/subscription/<token>')
 def subscription_access(token):
-    """订阅分组访问接口"""
-    subscription = Subscription.query.filter_by(subscription_token=token).first()
+    """订阅分组访问接口（支持自定义后缀和系统token）"""
+    # 先尝试用custom_slug查找，再用subscription_token查找
+    subscription = Subscription.query.filter_by(custom_slug=token).first()
+    if not subscription:
+        subscription = Subscription.query.filter_by(subscription_token=token).first()
     
     if not subscription:
         return "Invalid subscription", 404

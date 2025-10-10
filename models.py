@@ -65,6 +65,7 @@ class Subscription(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     subscription_token = db.Column(db.String(64), unique=True, nullable=False)  # 订阅令牌
+    custom_slug = db.Column(db.String(100), unique=True, nullable=True)  # 自定义后缀
     template_id = db.Column(db.Integer, db.ForeignKey('templates.id'), nullable=True)  # 使用的模板
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
@@ -107,6 +108,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     subscription_token = db.Column(db.String(64), unique=True, nullable=False)  # 订阅令牌
+    custom_slug = db.Column(db.String(100), unique=True, nullable=True)  # 自定义后缀
     enabled = db.Column(db.Boolean, default=True)
     remark = db.Column(db.String(255))  # 备注说明
     template_id = db.Column(db.Integer, db.ForeignKey('templates.id'), nullable=True)  # 使用的模板
