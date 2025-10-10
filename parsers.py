@@ -49,6 +49,9 @@ class ProxyParser:
                     base64_part = parts[0]
                     server_port = parts[1]
                     
+                    # URL 解码（处理 %3D 等编码字符）
+                    base64_part = urllib.parse.unquote(base64_part)
+                    
                     # 添加 padding 并解码
                     padding = '=' * (4 - len(base64_part) % 4)
                     if padding == '====':
@@ -58,7 +61,14 @@ class ProxyParser:
                         decoded = base64.b64decode(base64_part + padding).decode('utf-8')
                     except:
                         # 尝试 URL-safe base64
-                        decoded = base64.urlsafe_b64decode(base64_part + padding).decode('utf-8')
+                        try:
+                            decoded = base64.urlsafe_b64decode(base64_part + padding).decode('utf-8')
+                        except:
+                            # 如果仍然失败，可能不需要 padding
+                            try:
+                                decoded = base64.b64decode(base64_part).decode('utf-8')
+                            except:
+                                decoded = base64.urlsafe_b64decode(base64_part).decode('utf-8')
                     
                     # 解析 method:password
                     if ':' in decoded:

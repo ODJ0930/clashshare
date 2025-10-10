@@ -384,6 +384,20 @@ table tr:hover {
     background: #f8f9fa;
 }
 
+/* 节点排序数字样式 - 类似badge */
+.order-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeaa7;
+    min-width: 40px;
+    text-align: center;
+}
+
 .badge {
     display: inline-block;
     padding: 4px 12px;

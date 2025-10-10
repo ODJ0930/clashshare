@@ -179,21 +179,17 @@ def manage_subscription_nodes(sub_id):
             'protocol': n.protocol
         } for n in sub.nodes])
     
-    # POST - 设置订阅分组的节点
+    # POST - 设置订阅分组的节点（多对多关系）
     data = request.get_json()
     node_ids = data.get('node_ids', [])
     
-    # 获取所有节点
-    all_nodes = Node.query.all()
-    
-    # 更新节点的订阅分组
-    for node in all_nodes:
-        if node.id in node_ids:
-            # 如果节点ID在列表中，设置为当前分组
-            node.subscription_id = sub_id
-        elif node.subscription_id == sub_id:
-            # 如果节点原本属于当前分组但不在列表中，移除分组
-            node.subscription_id = None
+    # 获取所有要关联的节点
+    if node_ids:
+        nodes = Node.query.filter(Node.id.in_(node_ids)).all()
+        sub.nodes = nodes
+    else:
+        # 如果node_ids为空，清空该订阅的所有节点
+        sub.nodes = []
     
     db.session.commit()
     
@@ -214,9 +210,11 @@ def manage_nodes():
             'name': n.name,
             'original_name': n.original_name,
             'protocol': n.protocol,
-            'subscription_id': n.subscription_id,
-            'subscription_name': n.subscription.name if n.subscription else '手动添加',
-            'user_names': [u.username for u in n.subscription.users] if n.subscription else [],
+            'subscription_id': n.subscription_id,  # 保留用于兼容性
+            'subscription_name': ', '.join([s.name for s in n.subscriptions]) if n.subscriptions else '手动添加',
+            'subscription_names': [s.name for s in n.subscriptions],  # 新增：所有订阅名称列表
+            'subscription_ids': [s.id for s in n.subscriptions],  # 新增：所有订阅ID列表
+            'user_names': list(set([u.username for s in n.subscriptions for u in s.users])) if n.subscriptions else [],
             'order': n.order if hasattr(n, 'order') else 0,
             'created_at': n.created_at.strftime('%Y-%m-%d %H:%M:%S')
         } for n in nodes])
@@ -242,7 +240,7 @@ def manage_nodes():
     # 更新配置中的名称为自定义名称
     proxy['name'] = node_name
     
-    # 获取当前最大排序值，新节点排在最后
+    # 获取当前最大排序值，新节点排在最后，从1开始
     max_order = db.session.query(db.func.max(Node.order)).scalar() or 0
     
     node = Node(
@@ -250,7 +248,7 @@ def manage_nodes():
         original_name=original_name,
         protocol=proxy['type'],
         subscription_id=subscription_id,
-        order=max_order + 10
+        order=max_order + 1
     )
     node.set_config(proxy)
     
@@ -283,7 +281,7 @@ def batch_import_nodes():
         if not proxies:
             return jsonify({'success': False, 'message': '未能解析到任何节点'}), 400
         
-        # 获取当前最大排序值
+        # 获取当前最大排序值，从1开始
         max_order = db.session.query(db.func.max(Node.order)).scalar() or 0
         
         # 添加节点
@@ -294,7 +292,7 @@ def batch_import_nodes():
                 original_name=proxy['name'],
                 protocol=proxy['type'],
                 subscription_id=subscription_id,
-                order=max_order + (added_count + 1) * 10
+                order=max_order + added_count + 1
             )
             node.set_config(proxy)
             db.session.add(node)
@@ -417,7 +415,7 @@ def manual_create_node():
             if field not in config or not config[field]:
                 return jsonify({'success': False, 'message': f'{protocol.upper()} 协议缺少必要字段: {field}'}), 400
     
-    # 获取当前最大排序值
+    # 获取当前最大排序值，从1开始
     max_order = db.session.query(db.func.max(Node.order)).scalar() or 0
     
     # 创建节点
@@ -426,7 +424,7 @@ def manual_create_node():
         original_name=config['name'],
         protocol=protocol,
         subscription_id=subscription_id,
-        order=max_order + 10
+        order=max_order + 1
     )
     node.set_config(config)
     
@@ -457,7 +455,7 @@ def create_relay_node():
     if not isinstance(config['proxies'], list) or len(config['proxies']) < 2:
         return jsonify({'success': False, 'message': '至少需要2个代理节点'}), 400
     
-    # 获取当前最大排序值
+    # 获取当前最大排序值，从1开始
     max_order = db.session.query(db.func.max(Node.order)).scalar() or 0
     
     # 创建relay节点
@@ -466,7 +464,7 @@ def create_relay_node():
         original_name=config['name'],
         protocol='relay',
         subscription_id=subscription_id,
-        order=max_order + 10
+        order=max_order + 1
     )
     node.set_config(config)
     
@@ -851,9 +849,8 @@ def import_template():
                 
             processed_group = group.copy()
             
-            if 'proxies' in processed_group:
+            if 'proxies' in processed_group and len(processed_group['proxies']) > 0:
                 new_proxies = []
-                has_nodes = False
                 
                 for proxy in processed_group['proxies']:
                     # 保留特殊策略
@@ -862,18 +859,15 @@ def import_template():
                     # 保留策略组引用
                     elif proxy in group_names:
                         new_proxies.append(proxy)
-                    # 是实际节点，标记需要替换
-                    elif proxy in node_names:
-                        has_nodes = True
-                    # 其他未知项保留
-                    else:
-                        new_proxies.append(proxy)
+                    # 其他的都是实际节点，不添加（会被PROXY_NODES替代）
                 
-                # 如果有实际节点，添加PROXY_NODES占位符
-                if has_nodes:
-                    new_proxies.append('PROXY_NODES')
+                # 无论如何都添加 PROXY_NODES，这样每个组都包含所有节点
+                new_proxies.append('PROXY_NODES')
                 
                 processed_group['proxies'] = new_proxies
+            elif 'proxies' in processed_group:
+                # 如果原来proxies是空列表，也添加PROXY_NODES
+                processed_group['proxies'] = ['PROXY_NODES']
             
             processed_groups.append(processed_group)
         

@@ -12,6 +12,7 @@
 - 📝 配置模板管理
 - 🔗 链式代理支持
 - 🔢 节点自定义排序
+- 🔄 节点多分组支持（一个节点可同时属于多个分组）
 
 ---
 
@@ -57,7 +58,7 @@ python3 --version
 
 ```bash
 # 方法1: 使用 git clone（推荐）
-git clone <项目地址>
+git clone https://github.com/ODJ0930/clashshare.git
 cd dychange
 
 # 方法2: 下载 ZIP 文件后解压
@@ -86,33 +87,17 @@ pip install --user -r requirements.txt
 - `requests`: HTTP 请求库
 - `PyYAML`: YAML 配置文件处理
 
-### 第四步：运行迁移脚本（首次使用或更新后）
+### 第四步：启动 Web 管理界面
 
 ```bash
-# 如果是首次使用或刚更新代码，运行以下命令
-python migrate_to_many_to_many.py  # 升级多对多关系（如需要）
-python add_node_order.py           # 添加节点排序功能（如需要）
-```
-
-按提示输入 `y` 确认迁移。
-
-### 第五步：启动 Web 管理界面
-
-```bash
-# Windows - 双击运行或命令行执行
-start_web.bat
-
-# 或直接用 Python 启动
+# Windows 用 Python 启动
 python app.py
 
-# Linux/macOS
-./start_web.sh
-
-# 或直接用 Python 启动
+# Linux/macOS用 Python 启动
 python3 app.py
 ```
 
-### 第六步：访问管理界面
+### 第五步：访问管理界面
 
 启动成功后，在浏览器中打开：
 

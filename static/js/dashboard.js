@@ -3,6 +3,8 @@ let currentUserId = null;
 let currentEditUserId = null;
 let currentSubscriptionId = null;
 let currentEditTemplateId = null;
+let currentEditNodeId = null;
+let currentEditNodeProtocol = null; // 当前编辑节点的协议类型
 let allNodes = [];
 let allSubscriptions = [];
 let allTemplates = [];
@@ -244,11 +246,7 @@ async function loadNodes() {
                 <td>${subscriptionBadge}</td>
                 <td>${userBadges}</td>
                 <td>
-                    <input type="number" 
-                           value="${node.order || 0}" 
-                           style="width: 60px; padding: 4px; text-align: center;" 
-                           onchange="updateNodeOrder(${node.id}, this.value)"
-                           title="数字越小越靠前">
+                    <span class="order-badge" onclick="editNodeOrder(${node.id}, ${node.order || 0})" style="cursor: pointer;" title="点击修改排序">${node.order || 0}</span>
                 </td>
                 <td class="action-buttons">
                     <button class="btn btn-info btn-small" onclick="showEditNodeModal(${node.id})">✏️ 编辑</button>
@@ -917,15 +915,21 @@ async function deleteTemplate(templateId) {
             method: 'DELETE'
         });
         
-        const data = await response.json();
-        
-        if (data.success) {
-            loadTemplates();
-            loadStats();
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+                loadTemplates();
+                loadStats();
+            } else {
+                alert('❌ ' + data.message);
+            }
         } else {
-            alert('❌ ' + data.message);
+            // 处理非200状态码
+            const data = await response.json();
+            alert('❌ ' + (data.message || '删除失败'));
         }
     } catch (error) {
+        console.error('删除模板错误:', error);
         alert('删除失败: ' + error.message);
     }
 }
@@ -1041,8 +1045,6 @@ async function importTemplateFromFile() {
 
 // ============ 节点编辑功能 ============
 
-let currentEditNodeId = null;
-
 async function showEditNodeModal(nodeId) {
     currentEditNodeId = nodeId;
     
@@ -1055,6 +1057,9 @@ async function showEditNodeModal(nodeId) {
             alert('节点不存在');
             return;
         }
+        
+        // 保存协议类型（用于保存时使用）
+        currentEditNodeProtocol = node.protocol;
         
         // 填充基本信息
         document.getElementById('editNodeName').value = node.name;
@@ -1083,6 +1088,7 @@ async function saveNodeEdit() {
     // 收集配置数据
     const config = collectNodeConfig('editNodeConfigFields');
     config.name = name;
+    config.type = currentEditNodeProtocol; // 添加协议类型
     
     try {
         const response = await fetch(`/api/nodes/${currentEditNodeId}/config`, {
@@ -1887,6 +1893,19 @@ async function deleteRelayNode(id) {
 }
 
 // ============ 节点排序功能 ============
+
+function editNodeOrder(nodeId, currentOrder) {
+    const newOrder = prompt('请输入新的排序数字（数字越小越靠前）:', currentOrder);
+    if (newOrder === null || newOrder === '') return;
+    
+    const orderNum = parseInt(newOrder);
+    if (isNaN(orderNum) || orderNum < 0) {
+        alert('请输入有效的数字（大于等于0）');
+        return;
+    }
+    
+    updateNodeOrder(nodeId, orderNum);
+}
 
 async function updateNodeOrder(nodeId, order) {
     try {

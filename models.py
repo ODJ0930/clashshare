@@ -16,6 +16,13 @@ user_subscription = db.Table('user_subscription',
     db.Column('created_at', db.DateTime, default=datetime.utcnow)
 )
 
+# 订阅与节点的多对多关联表
+subscription_node = db.Table('subscription_node',
+    db.Column('subscription_id', db.Integer, db.ForeignKey('subscriptions.id'), primary_key=True),
+    db.Column('node_id', db.Integer, db.ForeignKey('nodes.id'), primary_key=True),
+    db.Column('created_at', db.DateTime, default=datetime.utcnow)
+)
+
 
 class Admin(db.Model):
     """管理员表"""
@@ -61,8 +68,8 @@ class Subscription(db.Model):
     template_id = db.Column(db.Integer, db.ForeignKey('templates.id'), nullable=True)  # 使用的模板
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # 关联节点
-    nodes = db.relationship('Node', backref='subscription', lazy=True, cascade='all, delete-orphan')
+    # 多对多关系：订阅可以包含多个节点，节点也可以属于多个订阅
+    nodes = db.relationship('Node', secondary=subscription_node, back_populates='subscriptions', lazy=True)
     
     # 多对多关系：订阅可以被多个用户使用
     users = db.relationship('User', secondary=user_subscription, back_populates='subscriptions')
@@ -77,9 +84,12 @@ class Node(db.Model):
     original_name = db.Column(db.String(100))  # 原始名称
     protocol = db.Column(db.String(20), nullable=False)  # ss, vmess, trojan, etc.
     config = db.Column(db.Text, nullable=False)  # JSON格式的节点配置
-    subscription_id = db.Column(db.Integer, db.ForeignKey('subscriptions.id'), nullable=True)
+    subscription_id = db.Column(db.Integer, db.ForeignKey('subscriptions.id'), nullable=True)  # 保留用于兼容性，但不再使用
     order = db.Column(db.Integer, default=0)  # 排序字段，数字越小越靠前
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # 多对多关系：节点可以属于多个订阅
+    subscriptions = db.relationship('Subscription', secondary=subscription_node, back_populates='nodes')
     
     def get_config(self):
         """获取节点配置"""
