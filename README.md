@@ -13,8 +13,7 @@
 - 🔗 独立的用户订阅接口
 - 📝 配置模板管理
 - 🔗 链式代理支持
-- 🔢 节点自定义排序
-- 🔄 节点多分组支持（一个节点可同时属于多个分组）
+- 🔄 节点多分组支持
 
 ---
 
@@ -60,8 +59,9 @@ python3 --version
 
 ```bash
 # 方法1: 使用 git clone（推荐）
+apt install git
 git clone https://github.com/ODJ0930/clashshare.git
-cd dychange
+cd clashshare
 
 # 方法2: 下载 ZIP 文件后解压
 # 然后在命令行中进入项目目录
@@ -74,10 +74,10 @@ cd dychange
 
 ```bash
 # Windows
-pip install -r requirements.txt
+pip install -r requirements.txt --break-system-packages
 
 # Linux/macOS
-pip3 install -r requirements.txt
+pip install -r requirements.txt --break-system-packages
 
 # 如果提示权限错误，使用
 pip install --user -r requirements.txt
