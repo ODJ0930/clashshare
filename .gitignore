@@ -4,6 +4,9 @@ __pycache__/
 *$py.class
 *.so
 .Python
+env/
+venv/
+ENV/
 build/
 develop-eggs/
 dist/
@@ -20,11 +23,12 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
-venv/
-ENV/
-env/
-.venv
+# Database
+*.db
+*.db.backup.*
+*.sqlite
+*.sqlite3
+instance/
 
 # IDE
 .vscode/
@@ -32,20 +36,22 @@ env/
 *.swp
 *.swo
 *~
-
-# 输出文件
-*.yaml
-*.yml
-!example_config.yaml
-
-# 订阅文件（可能包含敏感信息）
-subscription.txt
-my_subscription.txt
-
-# 日志文件
-*.log
-
-# 操作系统
 .DS_Store
-Thumbs.db
 
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+.env.local
+
+# Port config
+.port
+
+# Backup files
+*.backup
+
+# OS
+Thumbs.db
+desktop.ini

@@ -1326,12 +1326,15 @@ rules:
 if __name__ == '__main__':
     init_db()
     
+    # 从环境变量或配置文件读取端口
+    port = int(os.environ.get('PORT', 5000))
+    
     print("\n" + "="*60)
     print("🚀 Clash Meta 订阅管理系统")
     print("="*60)
-    print(f"📡 访问地址: http://127.0.0.1:5000")
+    print(f"📡 访问地址: http://0.0.0.0:{port}")
     print(f"👤 默认账号: admin / admin123")
     print("="*60 + "\n")
     
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=port)
 

@@ -14,18 +14,103 @@
 - 📝 配置模板管理
 - 🔗 链式代理支持
 - 🔄 节点多分组支持
+- 🗑️ 节点批量删除
+
+---
+
+## 🚀 一键安装（Linux）
+
+### 推荐方式：一键脚本
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ODJ0930/clashshare/main/install.sh | sudo bash
+```
+
+或者使用 wget：
+
+```bash
+wget -O install.sh https://raw.githubusercontent.com/ODJ0930/clashshare/main/install.sh
+chmod +x install.sh
+sudo ./install.sh
+```
+
+### 功能菜单
+
+执行脚本后会显示交互式菜单：
+- ✅ 安装 - 自动检测并安装依赖
+- 🔄 更新 - 保留数据更新到最新版
+- 🗑️ 卸载 - 可选保留数据库
+- 🔑 重置管理员密码
+- 🔧 修改运行端口
+- 📊 查看运行状态
+- 🎯 服务管理（启动/停止/重启）
+
+### 一键命令模式
+
+```bash
+# 直接安装
+sudo bash install.sh install
+
+# 更新程序
+sudo bash install.sh update
+
+# 卸载程序
+sudo bash install.sh uninstall
+```
+
+### 安装后
+
+安装完成后，通过浏览器访问：
+```
+http://您的服务器IP:端口
+```
+
+**默认账号：**
+- 用户名: `admin`
+- 密码: `admin123`
+
+⚠️ **请立即修改默认密码！**
+
+### 服务管理
+
+```bash
+# 启动服务
+sudo systemctl start clashshare
+
+# 停止服务
+sudo systemctl stop clashshare
+
+# 重启服务
+sudo systemctl restart clashshare
+
+# 查看状态
+sudo systemctl status clashshare
+
+# 查看日志
+sudo journalctl -u clashshare -f
+```
+
+📖 **详细安装文档**: [INSTALL.md](INSTALL.md)
 
 ---
 
 ## 📦 系统要求
 
+### Linux 一键安装
+- **支持系统**: Ubuntu 18.04+, Debian 10+, CentOS 7+, RHEL 7+, Fedora 30+
+- **Python**: 3.8+ （脚本会自动安装）
+- **权限**: Root
+- **内存**: 512MB+
+- **磁盘**: 1GB+
+
+### 手动安装
 - **Python**: 3.7 或更高版本
 - **操作系统**: Windows / Linux / macOS
 - **网络**: 能够访问机场订阅链接或自定义节点
 
 ---
 
-## 🚀 快速开始
+## 🚀 手动安装（Windows/macOS）
 
 ### 第一步：安装 Python
 
