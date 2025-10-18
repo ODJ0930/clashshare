@@ -268,6 +268,32 @@ EOF
     print_success "systemd服务创建完成"
 }
 
+# 创建全局管理命令
+create_manage_command() {
+    print_info "创建管理命令..."
+    
+    # 复制脚本到安装目录
+    if [[ -f "$0" ]]; then
+        cp "$0" "$INSTALL_DIR/install.sh" 2>/dev/null || true
+    fi
+    
+    # 创建全局命令链接
+    cat > /usr/local/bin/clashshare <<'EOF'
+#!/bin/bash
+INSTALL_DIR="/opt/clashshare"
+if [[ -f "$INSTALL_DIR/install.sh" ]]; then
+    bash "$INSTALL_DIR/install.sh"
+else
+    echo "错误: 找不到管理脚本"
+    echo "请重新下载: wget https://raw.githubusercontent.com/ODJ0930/clashshare/main/install.sh"
+    exit 1
+fi
+EOF
+    
+    chmod +x /usr/local/bin/clashshare
+    print_success "管理命令创建完成"
+}
+
 # 启动服务
 start_service() {
     print_info "启动服务..."
@@ -395,6 +421,7 @@ install_main() {
         print_warning "⚠️  请立即登录并修改默认密码！"
         echo
         print_info "常用命令："
+        print_info "  管理面板: clashshare"
         print_info "  启动服务: systemctl start $SERVICE_NAME"
         print_info "  停止服务: systemctl stop $SERVICE_NAME"
         print_info "  重启服务: systemctl restart $SERVICE_NAME"
@@ -402,6 +429,9 @@ install_main() {
         print_info "  查看日志: journalctl -u $SERVICE_NAME -f"
         echo
         print_success "=================================================="
+        
+        # 创建全局管理命令
+        create_manage_command
     else
         print_error "安装过程中出现错误"
         exit 1
