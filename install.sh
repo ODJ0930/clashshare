@@ -590,6 +590,9 @@ change_port() {
         exit 1
     fi
     
+    # 停止服务
+    stop_service
+    
     # 读取当前端口
     if [[ -f "$INSTALL_DIR/.port" ]]; then
         current_port=$(cat "$INSTALL_DIR/.port")
@@ -597,16 +600,43 @@ change_port() {
         current_port=$DEFAULT_PORT
     fi
     
-    # 设置新端口
-    new_port=$(setup_port "$current_port")
+    print_info "当前端口: $current_port"
+    echo
+    read -p "请输入新的运行端口 [1-65535]: " new_port
     
-    # 重新创建服务
+    # 如果用户直接回车，保持原端口
+    if [[ -z "$new_port" ]]; then
+        print_warning "未输入端口，保持原端口 $current_port"
+        new_port=$current_port
+    fi
+    
+    # 验证端口号
+    if ! [[ "$new_port" =~ ^[0-9]+$ ]] || [[ "$new_port" -lt 1 ]] || [[ "$new_port" -gt 65535 ]]; then
+        print_error "无效的端口号: $new_port"
+        print_info "端口号必须是 1-65535 之间的数字"
+        start_service
+        return 1
+    fi
+    
+    # 保存新端口
+    echo "$new_port" > "$INSTALL_DIR/.port"
+    print_success "端口已保存: $new_port"
+    
+    # 重新创建服务配置
+    print_info "更新服务配置..."
     create_systemd_service "$new_port"
     
     # 重启服务
     if start_service; then
-        print_success "端口修改成功"
-        print_info "新访问地址: http://$(curl -s ifconfig.me || echo "YOUR_SERVER_IP"):$new_port"
+        echo
+        print_success "=============== 端口修改成功 ==============="
+        echo
+        local server_ip=$(curl -s ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
+        print_info "新访问地址: http://$server_ip:$new_port"
+        echo
+        print_success "=========================================="
+    else
+        print_error "服务启动失败，请检查日志: journalctl -u clashshare -f"
     fi
 }
 
