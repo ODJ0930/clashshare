@@ -768,18 +768,115 @@ class ProxyParser:
             return None
     
     @staticmethod
+    def parse_yaml_proxies(content: str) -> List[Dict[str, Any]]:
+        """
+        解析 YAML 格式的 Clash 配置，提取 proxies 节点
+        支持格式：
+        - YAML 完整配置（包含 proxies 字段）
+        - YAML 数组格式（直接是节点列表）
+        """
+        try:
+            import yaml
+            
+            # 解析 YAML
+            try:
+                config = yaml.safe_load(content)
+            except yaml.YAMLError:
+                return []
+            
+            proxies = []
+            
+            # 情况1: 完整 Clash 配置，包含 proxies 字段
+            if isinstance(config, dict) and 'proxies' in config:
+                proxy_list = config['proxies']
+                if isinstance(proxy_list, list):
+                    proxies = proxy_list
+            
+            # 情况2: 直接是节点列表（数组）
+            elif isinstance(config, list):
+                proxies = config
+            
+            # 验证和规范化节点配置
+            validated_proxies = []
+            for proxy in proxies:
+                if not isinstance(proxy, dict):
+                    continue
+                
+                # 必须包含基本字段
+                if 'name' not in proxy or 'type' not in proxy:
+                    continue
+                
+                # 协议类型必须是支持的类型
+                proxy_type = proxy.get('type', '').lower()
+                supported_types = ['ss', 'ssr', 'vmess', 'vless', 'trojan', 'hysteria2', 
+                                 'socks5', 'socks4', 'http', 'https', 'relay']
+                
+                if proxy_type not in supported_types:
+                    continue
+                
+                # 确保基本字段存在（除了 relay 类型）
+                if proxy_type != 'relay':
+                    if 'server' not in proxy or 'port' not in proxy:
+                        continue
+                
+                # 规范化端口为整数
+                if 'port' in proxy:
+                    try:
+                        proxy['port'] = int(proxy['port'])
+                    except (ValueError, TypeError):
+                        continue
+                
+                validated_proxies.append(proxy)
+            
+            return validated_proxies
+        
+        except ImportError:
+            print("警告: yaml 模块未安装，无法解析 YAML 格式")
+            return []
+        except Exception as e:
+            print(f"解析 YAML 配置失败: {e}")
+            return []
+    
+    @staticmethod
     def parse_subscription(content: str) -> List[Dict[str, Any]]:
         """解析订阅内容，返回节点列表"""
         proxies = []
         
-        # 尝试 base64 解码
+        # 检测内容格式
+        content_stripped = content.strip()
+        
+        # 1. 尝试解析为 YAML 格式（Clash 原生配置）
+        # 检测 YAML 特征：包含 "proxies:" 或 以 "- {" 或 "- name:" 开头
+        is_yaml = False
+        if ('proxies:' in content_stripped or 
+            content_stripped.startswith('- {') or 
+            content_stripped.startswith('- name:') or
+            'type: trojan' in content_stripped or
+            'type: vmess' in content_stripped or
+            'type: vless' in content_stripped or
+            'type: ss' in content_stripped):
+            is_yaml = True
+        
+        if is_yaml:
+            print("检测到 YAML 格式订阅，正在解析...")
+            proxies = ProxyParser.parse_yaml_proxies(content)
+            if proxies:
+                print(f"从 YAML 格式解析到 {len(proxies)} 个节点")
+                return proxies
+            else:
+                print("YAML 解析失败，尝试其他格式...")
+        
+        # 2. 尝试 base64 解码（传统订阅格式）
         try:
             decoded = base64.b64decode(content + '=' * (4 - len(content) % 4)).decode('utf-8')
             lines = decoded.strip().split('\n')
+            print("检测到 Base64 编码订阅")
         except:
             # 如果不是 base64，直接按行分割
             lines = content.strip().split('\n')
+            print("检测到纯文本订阅")
         
+        # 3. 逐行解析节点链接
         for line in lines:
             line = line.strip()
             if not line:
