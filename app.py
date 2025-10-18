@@ -243,19 +243,65 @@ def manage_nodes():
     subscription_id = data.get('subscription_id')  # 可选：指定订阅分组
     
     if not node_url:
-        return jsonify({'success': False, 'message': '节点链接不能为空'}), 400
+        return jsonify({'success': False, 'message': '节点配置不能为空'}), 400
     
-    # 解析节点
-    proxy = ProxyParser.parse_proxy(node_url)
-    if not proxy:
-        return jsonify({'success': False, 'message': '无法解析节点链接'}), 400
+    node_url = node_url.strip()
     
-    # 确定节点名称（自定义名称优先）
+    # 检测是 YAML 配置还是节点链接
+    proxy = None
+    
+    # 情况1: 检测是否为 YAML 格式（包含 "type:" 关键字或以 "{" 开头）
+    if ('type:' in node_url or node_url.startswith('{') or node_url.startswith('- {')):
+        print("检测到 YAML 格式配置")
+        try:
+            import yaml
+            
+            # 预处理 YAML 内容
+            yaml_content = node_url
+            
+            # 如果是单行字典格式，需要包装成数组
+            if yaml_content.startswith('{') and not yaml_content.startswith('- {'):
+                yaml_content = '- ' + yaml_content
+            elif yaml_content.startswith('- {'):
+                pass  # 已经是正确格式
+            
+            # 尝试解析
+            parsed = yaml.safe_load(yaml_content)
+            
+            if isinstance(parsed, list) and len(parsed) > 0:
+                proxy = parsed[0]  # 取第一个节点
+            elif isinstance(parsed, dict):
+                proxy = parsed
+            
+            if proxy and isinstance(proxy, dict):
+                print(f"成功解析 YAML 节点: {proxy.get('name')}")
+            else:
+                return jsonify({'success': False, 'message': 'YAML 格式不正确'}), 400
+                
+        except Exception as e:
+            print(f"YAML 解析失败: {e}")
+            return jsonify({'success': False, 'message': f'YAML 解析失败: {str(e)}'}), 400
+    else:
+        # 情况2: 传统节点分享链接（ss://, vmess://, trojan:// 等）
+        print("检测到节点分享链接")
+        proxy = ProxyParser.parse_proxy(node_url)
+        if not proxy:
+            return jsonify({'success': False, 'message': '无法解析节点链接。请使用标准分享链接或 YAML 配置格式。'}), 400
+    
+    # 验证节点配置
+    if not proxy or not isinstance(proxy, dict):
+        return jsonify({'success': False, 'message': '节点配置无效'}), 400
+    
+    if 'name' not in proxy or 'type' not in proxy:
+        return jsonify({'success': False, 'message': '节点配置缺少必要字段（name 或 type）'}), 400
+    
+    # 确定节点名称（自定义名称优先，仅对节点链接生效）
     node_name = custom_name or proxy['name']
     original_name = proxy['name']
     
-    # 更新配置中的名称为自定义名称
-    proxy['name'] = node_name
+    # 如果使用了自定义名称，更新配置中的名称
+    if custom_name:
+        proxy['name'] = custom_name
     
     # 获取当前最大排序值，新节点排在最后，从1开始
     max_order = db.session.query(db.func.max(Node.order)).scalar() or 0

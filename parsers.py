@@ -796,38 +796,27 @@ class ProxyParser:
             elif isinstance(config, list):
                 proxies = config
             
-            # 验证和规范化节点配置
+            # 简单验证：只要有 name 和 type 就接受，完全保持原样
             validated_proxies = []
-            for proxy in proxies:
+            for idx, proxy in enumerate(proxies):
                 if not isinstance(proxy, dict):
+                    print(f"节点 {idx+1} 不是字典类型，跳过")
                     continue
                 
-                # 必须包含基本字段
-                if 'name' not in proxy or 'type' not in proxy:
+                # 只验证必须包含 name 和 type
+                if 'name' not in proxy:
+                    print(f"节点 {idx+1} 缺少 name 字段，跳过")
+                    continue
+                    
+                if 'type' not in proxy:
+                    print(f"节点 {idx+1} ({proxy.get('name')}) 缺少 type 字段，跳过")
                     continue
                 
-                # 协议类型必须是支持的类型
-                proxy_type = proxy.get('type', '').lower()
-                supported_types = ['ss', 'ssr', 'vmess', 'vless', 'trojan', 'hysteria2', 
-                                 'socks5', 'socks4', 'http', 'https', 'relay']
-                
-                if proxy_type not in supported_types:
-                    continue
-                
-                # 确保基本字段存在（除了 relay 类型）
-                if proxy_type != 'relay':
-                    if 'server' not in proxy or 'port' not in proxy:
-                        continue
-                
-                # 规范化端口为整数
-                if 'port' in proxy:
-                    try:
-                        proxy['port'] = int(proxy['port'])
-                    except (ValueError, TypeError):
-                        continue
-                
+                # 原样保存，完全不做修改
+                print(f"✅ 节点 {idx+1}: {proxy.get('name')} [{proxy.get('type')}]")
                 validated_proxies.append(proxy)
             
+            print(f"✅ 成功导入 {len(validated_proxies)}/{len(proxies)} 个节点")
             return validated_proxies
         
         except ImportError:

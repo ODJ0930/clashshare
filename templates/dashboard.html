@@ -355,19 +355,28 @@
     
     <!-- 添加节点模态框 -->
     <div id="addNodeModal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content modal-large">
             <div class="modal-header">
                 <h2>添加节点</h2>
                 <span class="close" onclick="closeModal('addNodeModal')">&times;</span>
             </div>
             <div class="modal-body">
+                <div class="info-box" style="margin-bottom: 15px;">
+                    <p>💡 支持多种格式：</p>
+                    <ul style="margin: 5px 0 0 20px;">
+                        <li>节点分享链接：ss://, vmess://, trojan://, vless:// 等</li>
+                        <li>YAML 格式：- {name: xxx, server: xxx, port: xxx, type: xxx, ...}</li>
+                        <li>或不带 "- " 前缀：{name: xxx, server: xxx, ...}</li>
+                    </ul>
+                </div>
                 <div class="form-group">
                     <label>自定义名称（可选）</label>
                     <input type="text" id="nodeName" placeholder="留空使用节点原始名称">
+                    <small style="color: #666;">⚠️ 仅对节点链接生效，YAML格式会使用配置中的name</small>
                 </div>
                 <div class="form-group">
-                    <label>节点链接</label>
-                    <textarea id="nodeUrl" rows="4" placeholder="ss://... 或 vmess://... 等"></textarea>
+                    <label>节点配置</label>
+                    <textarea id="nodeUrl" rows="6" placeholder="支持格式：&#10;1. 节点链接：ss://... 或 vmess://... 等&#10;2. YAML 格式：- {name: 香港01, server: hk.com, port: 443, type: trojan, password: xxx, ...}&#10;3. 或不带前缀：{name: 香港01, ...}"></textarea>
                 </div>
                 <div class="form-group">
                     <label>所属分组（可选）</label>

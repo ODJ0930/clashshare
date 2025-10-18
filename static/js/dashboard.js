@@ -305,7 +305,7 @@ async function addNode() {
     const subscription_id = document.getElementById('nodeSubscription').value || null;
     
     if (!url) {
-        alert('请输入节点链接');
+        alert('请输入节点配置');
         return;
     }
     
@@ -319,16 +319,17 @@ async function addNode() {
         const data = await response.json();
         
         if (data.success) {
+            alert('✅ 节点添加成功');
             closeModal('addNodeModal');
             loadNodes();
             loadSubscriptions(); // 刷新订阅列表以更新节点数
             loadUsers(); // 刷新用户列表以更新节点数
             loadStats();
         } else {
-            alert('添加失败: ' + data.message);
+            alert('❌ 添加失败: ' + data.message);
         }
     } catch (error) {
-        alert('添加失败: ' + error.message);
+        alert('❌ 添加失败: ' + error.message);
     }
 }
 
