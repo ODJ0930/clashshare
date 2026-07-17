@@ -10,6 +10,7 @@ from generator import ClashConfigGenerator
 import os
 import secrets
 import copy
+import base64
 from datetime import datetime, timedelta
 from functools import wraps
 import requests as req
@@ -1751,6 +1752,87 @@ def _make_subscription_response(cache_entry, cache_status):
 
     response = make_response(cache_entry['body'], 200)
     return _apply_subscription_headers(response, cache_entry, cache_status)
+
+
+def _apply_shadowrocket_subscription_headers(response, cache_entry, cache_status):
+    """为 Shadowrocket 远程订阅附加下载、流量和缓存响应头。"""
+    encoded_filename = quote(cache_entry['filename'])
+    response.headers['Content-Type'] = 'text/plain; charset=utf-8'
+    response.headers['Content-Disposition'] = (
+        f"attachment; filename={encoded_filename}; filename*=UTF-8''{encoded_filename}"
+    )
+    response.headers['Subscription-Userinfo'] = cache_entry.get('subscription_userinfo') or 'upload=0; download=0; total=0; expire=0'
+    response.headers['Cache-Control'] = 'no-cache, must-revalidate'
+    response.headers['X-Subscription-Cache'] = cache_status
+    response.headers['X-Subscription-Cache-Version'] = str(cache_entry['version'])
+    response.headers['X-Subscription-Bytes'] = str(cache_entry['yaml_bytes'])
+    response.headers['X-Subscription-Format'] = 'shadowrocket'
+    response.headers['X-Shadowrocket-Node-Count'] = str(cache_entry.get('shadowrocket_node_count', 0))
+    response.headers['X-Shadowrocket-Skipped-Count'] = str(cache_entry.get('shadowrocket_skipped_count', 0))
+    response.set_etag(cache_entry['etag'])
+    return response
+
+
+def _make_shadowrocket_subscription_response(cache_entry, cache_status):
+    if _request_etag_matches(cache_entry['etag']):
+        response = make_response('', 304)
+        return _apply_shadowrocket_subscription_headers(response, cache_entry, 'NOT_MODIFIED')
+
+    response = make_response(cache_entry['body'], 200)
+    return _apply_shadowrocket_subscription_headers(response, cache_entry, cache_status)
+
+
+def _build_shadowrocket_subscription_body(proxy_configs):
+    """将有序 Clash 节点转换为 Shadowrocket 可读取的 Base64 URI 列表。"""
+    share_urls = []
+    seen_names = set()
+    skipped_count = 0
+
+    for raw_proxy in proxy_configs:
+        if not isinstance(raw_proxy, dict):
+            skipped_count += 1
+            continue
+
+        proxy = copy.deepcopy(raw_proxy)
+        name = str(proxy.get('name') or '').strip()
+        if not name:
+            skipped_count += 1
+            continue
+        if name in seen_names:
+            continue
+
+        if (
+            str(proxy.get('type') or '').lower() == 'relay'
+            or proxy.get('dialer-proxy')
+            or proxy.get('__chain_dependencies')
+        ):
+            skipped_count += 1
+            continue
+
+        if str(proxy.get('type') or '').lower() == 'shadowsocks':
+            proxy['type'] = 'ss'
+
+        try:
+            share_url = ProxyParser.to_share_url(proxy)
+        except (TypeError, ValueError) as exc:
+            skipped_count += 1
+            app.logger.warning(
+                "skip node in Shadowrocket subscription: name=%s type=%s error=%s",
+                name,
+                proxy.get('type') or '',
+                exc
+            )
+            continue
+
+        if not share_url:
+            skipped_count += 1
+            continue
+
+        seen_names.add(name)
+        share_urls.append(share_url)
+
+    plain_body = '\n'.join(share_urls).encode('utf-8')
+    return base64.b64encode(plain_body), len(share_urls), skipped_count
 
 
 def _log_subscription_timing(cache_type, name, cache_status, stats, started_at):
@@ -3645,6 +3727,98 @@ def user_subscription(token):
     _log_subscription_timing('user', user.username, 'MISS', cache_entry['stats'], started_at)
 
     return _make_subscription_response(cache_entry, 'MISS')
+
+
+@app.route('/sub/user/<token>/shadowrocket')
+def user_shadowrocket_subscription(token):
+    """用户 Shadowrocket 订阅接口（Base64 编码的标准分享链接列表）。"""
+    started_at = time.perf_counter()
+
+    user = User.query.filter_by(custom_slug=token).first()
+    if not user:
+        user = User.query.filter_by(subscription_token=token).first()
+
+    if not user or not user.enabled:
+        return "Invalid subscription", 404
+
+    _sync_user_xui_clients_if_stale(user, max_age_seconds=60)
+
+    if user.traffic_limit and _user_traffic_used_bytes(user) >= user.traffic_limit:
+        return "Traffic limit exceeded", 403
+
+    use_subscription_cache = not bool(user.node_assignments or user.xui_clients)
+    if use_subscription_cache:
+        cache_entry = _get_subscription_cache('shadowrocket-user', user.id)
+        if cache_entry:
+            _log_subscription_timing(
+                'shadowrocket-user',
+                user.username,
+                'HIT',
+                cache_entry.get('stats', {}),
+                started_at
+            )
+            return _make_shadowrocket_subscription_response(cache_entry, 'HIT')
+
+    collect_start = time.perf_counter()
+    all_nodes = []
+    for subscription in user.subscriptions:
+        all_nodes.extend(subscription.nodes)
+    direct_assignments = _active_user_node_assignments(user)
+    all_nodes.extend([assignment.node for assignment in direct_assignments if assignment.node])
+    all_nodes = _dedupe_nodes(all_nodes)
+    all_nodes.sort(key=lambda n: (n.order if hasattr(n, 'order') and n.order is not None else 0, n.id))
+
+    proxy_configs = []
+    for node in all_nodes:
+        config = node.get_config()
+        config['name'] = node.name
+        proxy_configs.append(config)
+    proxy_configs.extend(_build_xui_subscription_proxies(user))
+    collect_ms = (time.perf_counter() - collect_start) * 1000
+
+    if not proxy_configs:
+        return "No nodes available", 404
+
+    generate_start = time.perf_counter()
+    body, node_count, skipped_count = _build_shadowrocket_subscription_body(proxy_configs)
+    generate_ms = (time.perf_counter() - generate_start) * 1000
+    if not node_count:
+        return "No Shadowrocket-compatible nodes available", 404
+
+    cache_entry = {
+        'body': body,
+        'etag': hashlib.sha256(body).hexdigest(),
+        'filename': f'shadowrocket_{user.username}.txt',
+        'name': user.username,
+        'yaml_bytes': len(body),
+        'shadowrocket_node_count': node_count,
+        'shadowrocket_skipped_count': skipped_count,
+        'subscription_userinfo': _user_subscription_userinfo(user),
+        'stats': {
+            'node_count': len(all_nodes),
+            'extra_proxy_count': len(proxy_configs) - len(all_nodes),
+            'proxy_count': node_count,
+            'yaml_bytes': len(body),
+            'collect_ms': collect_ms,
+            'deps_ms': 0,
+            'generate_ms': generate_ms,
+            'yaml_ms': 0,
+        }
+    }
+
+    if use_subscription_cache:
+        cache_entry = _store_subscription_cache('shadowrocket-user', user.id, cache_entry)
+    else:
+        cache_entry['version'] = _subscription_cache_version
+
+    _log_subscription_timing(
+        'shadowrocket-user',
+        user.username,
+        'MISS',
+        cache_entry['stats'],
+        started_at
+    )
+    return _make_shadowrocket_subscription_response(cache_entry, 'MISS')
 
 
 @app.route('/sub/subscription/<token>')
