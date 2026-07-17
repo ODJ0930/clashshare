@@ -1,3 +1,4 @@
+import base64
 import json
 import shutil
 import unittest
@@ -7,8 +8,8 @@ from unittest.mock import patch
 
 import yaml
 
-from app import app, db
-from models import User, UserXuiClient, XuiConfig
+from app import app, db, _subscription_cache
+from models import Node, Subscription, User, UserXuiClient, XuiConfig
 
 
 def inbound(inbound_id=101, protocol='vless', network='tcp'):
@@ -87,6 +88,7 @@ class UserXuiClientsTest(unittest.TestCase):
 
     def setUp(self):
         with app.app_context():
+            _subscription_cache.clear()
             db.session.remove()
             db.drop_all()
             db.create_all()
@@ -148,6 +150,26 @@ class UserXuiClientsTest(unittest.TestCase):
     def login(self, client):
         with client.session_transaction() as session:
             session['admin_id'] = 1
+
+    def attach_subscription_nodes(self, configs):
+        with app.app_context():
+            user = User.query.get(self.user_id)
+            subscription = Subscription(
+                name='test-subscription',
+                subscription_token='test-subscription-token'
+            )
+            db.session.add(subscription)
+            for index, config in enumerate(configs, start=1):
+                node = Node(
+                    name=config['name'],
+                    original_name=config['name'],
+                    protocol=config['type'],
+                    order=index
+                )
+                node.set_config(config)
+                subscription.nodes.append(node)
+            user.subscriptions.append(subscription)
+            db.session.commit()
 
     def test_creates_one_remote_client_per_inbound_and_syncs_traffic(self):
         inbounds = [inbound(101), inbound(102)]
@@ -560,6 +582,146 @@ class UserXuiClientsTest(unittest.TestCase):
         self.assertEqual(proxies[0]['uuid'], '00000000-0000-4000-8000-000000000001')
         self.assertIn('upload=5; download=7; total=0', response.headers['Subscription-Userinfo'])
 
+    def test_shadowrocket_subscription_exports_supported_protocols_and_keeps_clash_yaml(self):
+        self.attach_subscription_nodes([
+            {
+                'name': '01-ss', 'type': 'ss', 'server': 'ss.example.test', 'port': 1001,
+                'cipher': 'aes-256-gcm', 'password': 'ss-password'
+            },
+            {
+                'name': '02-ssr', 'type': 'ssr', 'server': 'ssr.example.test', 'port': 1002,
+                'cipher': 'aes-256-cfb', 'password': 'ssr-password',
+                'protocol': 'origin', 'obfs': 'plain'
+            },
+            {
+                'name': '03-vmess', 'type': 'vmess', 'server': 'vmess.example.test', 'port': 1003,
+                'uuid': '00000000-0000-4000-8000-000000000003', 'alterId': 0, 'cipher': 'auto'
+            },
+            {
+                'name': '04-vless', 'type': 'vless', 'server': 'vless.example.test', 'port': 1004,
+                'uuid': '00000000-0000-4000-8000-000000000004'
+            },
+            {
+                'name': '05-trojan', 'type': 'trojan', 'server': 'trojan.example.test', 'port': 1005,
+                'password': 'trojan-password'
+            },
+            {
+                'name': '06-hysteria2', 'type': 'hysteria2', 'server': 'hy2.example.test', 'port': 1006,
+                'password': 'hy2-password'
+            },
+        ])
+
+        path = '/sub/user/user-token/shadowrocket'
+        with app.test_client() as client:
+            response = client.get(path)
+            not_modified = client.get(path, headers={'If-None-Match': response.headers.get('ETag')})
+            clash_response = client.get('/sub/user/user-token')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        decoded = base64.b64decode(response.data).decode('utf-8')
+        share_urls = decoded.splitlines()
+        self.assertEqual(
+            [url.split(':', 1)[0] for url in share_urls],
+            ['ss', 'ssr', 'vmess', 'vless', 'trojan', 'hysteria2']
+        )
+        self.assertFalse(decoded.endswith('\n'))
+        self.assertEqual(response.headers['Content-Type'], 'text/plain; charset=utf-8')
+        self.assertIn('shadowrocket_', response.headers['Content-Disposition'])
+        self.assertEqual(response.headers['X-Subscription-Format'], 'shadowrocket')
+        self.assertEqual(response.headers['X-Shadowrocket-Node-Count'], '6')
+        self.assertEqual(response.headers['X-Shadowrocket-Skipped-Count'], '0')
+        self.assertIn('upload=0; download=0; total=0', response.headers['Subscription-Userinfo'])
+        self.assertEqual(not_modified.status_code, 304)
+        self.assertEqual(not_modified.headers['X-Subscription-Cache'], 'NOT_MODIFIED')
+
+        self.assertEqual(clash_response.status_code, 200, clash_response.get_data(as_text=True))
+        clash_body = yaml.safe_load(clash_response.data.decode('utf-8'))
+        self.assertEqual(len(clash_body.get('proxies') or []), 6)
+        self.assertTrue(clash_response.headers['Content-Type'].startswith('text/yaml'))
+
+    def test_shadowrocket_subscription_supports_custom_slug_and_user_access_rules(self):
+        self.attach_subscription_nodes([{
+            'name': 'custom-vless',
+            'type': 'vless',
+            'server': 'custom.example.test',
+            'port': 443,
+            'uuid': '00000000-0000-4000-8000-000000000010'
+        }])
+        with app.app_context():
+            user = User.query.get(self.user_id)
+            user.custom_slug = 'custom-user'
+            db.session.commit()
+
+        with app.test_client() as client:
+            custom_response = client.get('/sub/user/custom-user/shadowrocket')
+            invalid_response = client.get('/sub/user/missing-token/shadowrocket')
+
+        self.assertEqual(custom_response.status_code, 200)
+        self.assertEqual(invalid_response.status_code, 404)
+
+        with app.app_context():
+            user = User.query.get(self.user_id)
+            user.enabled = False
+            db.session.commit()
+        with app.test_client() as client:
+            disabled_response = client.get('/sub/user/custom-user/shadowrocket')
+        self.assertEqual(disabled_response.status_code, 404)
+
+        with app.app_context():
+            user = User.query.get(self.user_id)
+            user.enabled = True
+            user.traffic_limit = 1
+            user.traffic_used = 2
+            db.session.commit()
+        with app.test_client() as client:
+            limited_response = client.get('/sub/user/custom-user/shadowrocket')
+        self.assertEqual(limited_response.status_code, 403)
+
+    def test_shadowrocket_subscription_skips_incompatible_nodes(self):
+        self.attach_subscription_nodes([
+            {
+                'name': '01-relay',
+                'type': 'relay',
+                'proxies': ['front-node', 'back-node']
+            },
+            {
+                'name': '02-vless',
+                'type': 'vless',
+                'server': 'vless.example.test',
+                'port': 443,
+                'uuid': '00000000-0000-4000-8000-000000000020'
+            },
+        ])
+
+        with app.test_client() as client:
+            response = client.get('/sub/user/user-token/shadowrocket')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        share_urls = base64.b64decode(response.data).decode('utf-8').splitlines()
+        self.assertEqual(len(share_urls), 1)
+        self.assertTrue(share_urls[0].startswith('vless://'))
+        self.assertEqual(response.headers['X-Shadowrocket-Node-Count'], '1')
+        self.assertEqual(response.headers['X-Shadowrocket-Skipped-Count'], '1')
+
+    def test_shadowrocket_subscription_reports_empty_and_all_incompatible(self):
+        with app.test_client() as client:
+            empty_response = client.get('/sub/user/user-token/shadowrocket')
+        self.assertEqual(empty_response.status_code, 404)
+        self.assertEqual(empty_response.get_data(as_text=True), 'No nodes available')
+
+        self.attach_subscription_nodes([{
+            'name': 'relay-only',
+            'type': 'relay',
+            'proxies': ['front-node', 'back-node']
+        }])
+        with app.test_client() as client:
+            incompatible_response = client.get('/sub/user/user-token/shadowrocket')
+        self.assertEqual(incompatible_response.status_code, 404)
+        self.assertEqual(
+            incompatible_response.get_data(as_text=True),
+            'No Shadowrocket-compatible nodes available'
+        )
+
     def test_user_api_keeps_user_limit_separate_from_xui_inbound_limit(self):
         raw_inbound = inbound(101)
         raw_inbound['total'] = 1000 * 1024 * 1024 * 1024
@@ -676,6 +838,7 @@ class UserXuiClientsTest(unittest.TestCase):
 
         with app.test_client() as client:
             response = client.get('/sub/user/user-token')
+            shadowrocket_response = client.get('/sub/user/user-token/shadowrocket')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         body = yaml.safe_load(response.data.decode('utf-8'))
@@ -683,6 +846,19 @@ class UserXuiClientsTest(unittest.TestCase):
         self.assertEqual(proxies[0]['server'], 'forward.example.test')
         self.assertEqual(proxies[0]['port'], 443)
         self.assertIn('upload=11; download=13; total=0', response.headers['Subscription-Userinfo'])
+        self.assertEqual(
+            shadowrocket_response.status_code,
+            200,
+            shadowrocket_response.get_data(as_text=True)
+        )
+        shadowrocket_urls = base64.b64decode(shadowrocket_response.data).decode('utf-8').splitlines()
+        self.assertEqual(len(shadowrocket_urls), 1)
+        self.assertTrue(shadowrocket_urls[0].startswith('vless://'))
+        self.assertIn('@forward.example.test:443?', shadowrocket_urls[0])
+        self.assertIn(
+            'upload=11; download=13; total=0',
+            shadowrocket_response.headers['Subscription-Userinfo']
+        )
 
     def test_user_subscription_enforces_user_limit_with_xui_clients(self):
         raw_inbound = inbound(101)

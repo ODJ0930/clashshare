@@ -626,6 +626,7 @@ async function loadUsers() {
         users.forEach(user => {
             const token = user.custom_slug || user.subscription_token;
             const subUrl = `${window.location.origin}/sub/user/${token}`;
+            const shadowrocketSubUrl = `${subUrl}/shadowrocket`;
             const isCustom = user.custom_slug ? '🔗' : '';
             const templateName = user.template_name || '默认';
             const directNodeText = user.direct_node_count
@@ -654,9 +655,16 @@ async function loadUsers() {
                     </span>
                 </td>
                 <td>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <code class="url-display" style="flex: 1;" title="${user.custom_slug ? '自定义链接' : '系统生成链接'}">${isCustom}${escapeHtml(truncateUrl(subUrl, 40))}</code>
-                        <button class="copy-btn" onclick="copyToClipboard('${escapeJs(subUrl)}')">📋 复制</button>
+                    <div class="subscription-link-stack">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <code class="url-display" style="flex: 1;" title="${user.custom_slug ? '自定义链接' : '系统生成链接'}">${isCustom}${escapeHtml(truncateUrl(subUrl, 40))}</code>
+                            <button class="copy-btn" onclick="copyToClipboard('${escapeJs(subUrl)}')">📋 复制</button>
+                        </div>
+                        <div class="subscription-link-row">
+                            <span class="subscription-link-label">Shadowrocket</span>
+                            <code class="url-display" title="Shadowrocket 订阅链接">${escapeHtml(truncateUrl(shadowrocketSubUrl, 40))}</code>
+                            <button class="copy-btn" onclick="copyToClipboard('${escapeJs(shadowrocketSubUrl)}')">📋 复制</button>
+                        </div>
                     </div>
                 </td>
                 <td class="action-buttons">

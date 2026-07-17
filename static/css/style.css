@@ -571,6 +571,39 @@ table tr:hover {
     white-space: nowrap;
 }
 
+.subscription-link-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    min-width: 280px;
+    max-width: 100%;
+}
+
+.subscription-link-stack > div,
+.subscription-link-stack .url-display {
+    min-width: 0;
+}
+
+.subscription-link-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.subscription-link-row .url-display {
+    flex: 1;
+}
+
+.subscription-link-label {
+    flex-shrink: 0;
+    padding: 3px 7px;
+    border-radius: 4px;
+    background: #eef1ff;
+    color: #4b56a6;
+    font-size: 11px;
+    font-weight: 600;
+}
+
 .copy-btn {
     background: #3498db;
     color: white;
