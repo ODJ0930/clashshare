@@ -1959,6 +1959,97 @@ def _get_chain_dependency_names(config):
     return _dedupe_preserve_order(dependency_names)
 
 
+def _sync_dialer_proxy_descendants(changed_node, previous_name=None):
+    """
+    同步 dialer-proxy 链式节点中缓存的后置节点配置。
+
+    dialer-proxy 节点创建时会复制后置节点配置，因此后置节点之后发生
+    编辑时，复制出来的 server、port、凭据等字段也必须一并更新。前置
+    节点则通过名称引用，只需更新引用名称。这里同时递归处理多级链式
+    节点，确保链式节点作为另一个链式节点的后置节点时也不会保留旧配置。
+    """
+    if not changed_node:
+        return
+
+    source_name_before = previous_name or changed_node.name
+    source_name_after = changed_node.name
+    source_config = copy.deepcopy(changed_node.get_config())
+    source_protocol = changed_node.protocol
+    all_nodes = Node.query.all()
+    pending = [(source_name_before, source_name_after, source_config, source_protocol)]
+    visited = set()
+
+    while pending:
+        old_name, new_name, current_config, current_protocol = pending.pop(0)
+        for child in all_nodes:
+            if child.id == changed_node.id:
+                continue
+
+            child_config = child.get_config()
+            dialer_proxy = child_config.get('dialer-proxy')
+            if not isinstance(dialer_proxy, str) or not dialer_proxy:
+                continue
+
+            dependencies = child_config.get('__chain_dependencies')
+            if not isinstance(dependencies, list):
+                dependencies = []
+            dependencies = [name for name in dependencies if isinstance(name, str) and name]
+
+            front_match = dialer_proxy == old_name
+            dependency_match = old_name in dependencies
+            if not front_match and not dependency_match:
+                continue
+
+            # 创建时依赖顺序为 [前置节点, 后置节点]。只有出现在后置
+            # 位置时才复制当前节点配置；没有显式依赖时仅能判断为前置。
+            back_match = dependency_match and (
+                not front_match
+                or len(dependencies) == 1
+                or dependencies[-1] == old_name
+            )
+
+            visit_key = (child.id, new_name)
+            if visit_key in visited:
+                continue
+            visited.add(visit_key)
+
+            original_config = copy.deepcopy(child_config)
+            if back_match:
+                # 保留链式节点自己的元数据及 UDP 覆盖项，其余字段从
+                # 当前后置节点完整替换，以避免遗漏新增的协议参数。
+                preserved = {
+                    key: copy.deepcopy(child_config[key])
+                    for key in ('name', 'dialer-proxy', '__chain_dependencies', 'udp', 'disable-udp')
+                    if key in child_config
+                }
+                child_config = copy.deepcopy(current_config)
+                child_config.update(preserved)
+                # 链式节点创建时 UDP 与 disable-udp 二选一；保留原有
+                # 覆盖项时也要移除来自后置节点配置的相反字段。
+                if 'udp' in preserved and 'disable-udp' not in preserved:
+                    child_config.pop('disable-udp', None)
+                elif 'disable-udp' in preserved and 'udp' not in preserved:
+                    child_config.pop('udp', None)
+                child.protocol = current_protocol
+
+            if front_match:
+                child_config['dialer-proxy'] = new_name
+
+            if dependencies:
+                child_config['__chain_dependencies'] = _dedupe_preserve_order([
+                    new_name if dependency == old_name else dependency
+                    for dependency in dependencies
+                ])
+
+            # 复制后置配置时会带入后置节点名称，必须恢复链式节点本身
+            # 的名称，否则下一次同步会把链式节点误认为后置节点。
+            child_config['name'] = child.name
+
+            if child_config != original_config:
+                child.set_config(child_config)
+                pending.append((child.name, child.name, copy.deepcopy(child_config), child.protocol))
+
+
 def _dedupe_nodes(nodes):
     """按节点 ID 去重，避免用户聚合多个订阅时重复输出同一节点。"""
     seen = set()
@@ -2516,17 +2607,23 @@ def update_node(node_id):
     
     # PUT - 更新节点（重命名、更改订阅分组或排序）
     data = request.get_json()
+    previous_name = node.name
+    node_changed = False
     if 'name' in data:
         node.name = data['name']
         # 同时更新配置中的名称
         config = node.get_config()
         config['name'] = data['name']
         node.set_config(config)
+        node_changed = previous_name != node.name
     if 'subscription_id' in data:
         node.subscription_id = data['subscription_id']
     if 'order' in data:
         node.order = data['order']
     
+    if node_changed:
+        _sync_dialer_proxy_descendants(node, previous_name=previous_name)
+
     db.session.commit()
     return jsonify({'success': True})
 
@@ -2618,9 +2715,11 @@ def update_node_config(node_id):
         return jsonify({'success': False, 'message': '配置缺少必要字段'}), 400
     
     # 更新节点信息
+    previous_name = node.name
     node.name = new_config['name']
     node.protocol = new_config['type']
     node.set_config(new_config)
+    _sync_dialer_proxy_descendants(node, previous_name=previous_name)
     
     db.session.commit()
     
