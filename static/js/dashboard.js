@@ -339,6 +339,7 @@ async function loadNodes() {
                 : `<span class="badge badge-primary">${node.subscription_name}</span>`;
             
             const row = document.createElement('tr');
+            row.dataset.nodeId = node.id;
             row.innerHTML = `
                 <td style="text-align: center;">
                     <input type="checkbox" class="node-checkbox" value="${node.id}" onchange="updateBatchDeleteButton()">
@@ -351,6 +352,7 @@ async function loadNodes() {
                 <td>${subscriptionBadge}</td>
                 <td>${userBadges}</td>
                 <td>
+                    <span class="node-drag-handle" draggable="true" role="button" aria-label="拖动排序" title="拖动调整节点顺序">⠿</span>
                     <span class="order-badge" onclick="editNodeOrder(${node.id}, ${node.order || 0})" style="cursor: pointer;" title="点击修改排序">${node.order || 0}</span>
                 </td>
                 <td class="action-buttons">
@@ -363,6 +365,8 @@ async function loadNodes() {
             tbody.appendChild(row);
         });
         
+        setupNodeDragSorting(tbody);
+
         // 重置全选框和批量删除按钮
         document.getElementById('selectAllNodes').checked = false;
         updateBatchDeleteButton();
@@ -6158,4 +6162,91 @@ async function updateNodeOrder(nodeId, order) {
     } catch (error) {
         alert('更新排序失败: ' + error.message);
     }
+}
+
+let nodeOrderSaving = false;
+
+function setupNodeDragSorting(tbody) {
+    let draggedRow = null;
+    let originalRows = [];
+    let dropped = false;
+    const status = document.getElementById('nodeOrderStatus');
+
+    function restoreRows() {
+        originalRows.forEach(row => tbody.appendChild(row));
+    }
+
+    function clearDrag() {
+        if (draggedRow) draggedRow.classList.remove('node-dragging');
+        draggedRow = null;
+    }
+
+    tbody.querySelectorAll('.node-drag-handle').forEach(handle => {
+        handle.addEventListener('dragstart', event => {
+            if (nodeOrderSaving) {
+                event.preventDefault();
+                return;
+            }
+            draggedRow = handle.closest('tr');
+            originalRows = Array.from(tbody.rows);
+            dropped = false;
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', draggedRow.dataset.nodeId);
+            draggedRow.classList.add('node-dragging');
+        });
+        handle.addEventListener('dragend', () => {
+            if (!dropped && draggedRow) restoreRows();
+            clearDrag();
+        });
+    });
+
+    tbody.ondragover = event => {
+        if (!draggedRow || nodeOrderSaving) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        const targetRow = event.target.closest('tr');
+        if (!targetRow || targetRow === draggedRow || targetRow.parentNode !== tbody) return;
+        const bounds = targetRow.getBoundingClientRect();
+        const insertBefore = event.clientY < bounds.top + bounds.height / 2;
+        tbody.insertBefore(draggedRow, insertBefore ? targetRow : targetRow.nextSibling);
+    };
+
+    tbody.ondrop = async event => {
+        if (!draggedRow || nodeOrderSaving) return;
+        event.preventDefault();
+        dropped = true;
+        clearDrag();
+        const nodeIds = Array.from(tbody.rows, row => Number(row.dataset.nodeId));
+        if (nodeIds.every((id, index) => id === Number(originalRows[index].dataset.nodeId))) return;
+
+        nodeOrderSaving = true;
+        tbody.closest('table').setAttribute('aria-busy', 'true');
+        status.textContent = '正在保存排序…';
+        try {
+            const response = await fetch('/api/nodes/reorder', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ node_ids: nodeIds })
+            });
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.message || '保存排序失败，请重试');
+            }
+            const nodesById = new Map(allNodes.map(node => [node.id, node]));
+            allNodes = nodeIds.map((id, order) => ({ ...nodesById.get(id), order }));
+            Array.from(tbody.rows).forEach((row, order) => {
+                const badge = row.querySelector('.order-badge');
+                badge.textContent = order;
+                badge.onclick = () => editNodeOrder(Number(row.dataset.nodeId), order);
+            });
+            status.textContent = '排序已保存';
+        } catch (error) {
+            restoreRows();
+            status.textContent = '保存失败，已恢复原顺序';
+            alert(error.message);
+        } finally {
+            nodeOrderSaving = false;
+            tbody.closest('table').removeAttribute('aria-busy');
+        }
+    };
 }

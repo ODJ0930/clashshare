@@ -2628,6 +2628,34 @@ def update_node(node_id):
     return jsonify({'success': True})
 
 
+@app.route('/api/nodes/reorder', methods=['PUT'])
+@login_required
+def reorder_nodes():
+    """一次性保存全局节点顺序，供管理列表和所有订阅共同使用。"""
+    data = request.get_json(silent=True)
+    node_ids = data.get('node_ids') if isinstance(data, dict) else None
+    if (
+        not isinstance(node_ids, list)
+        or any(type(node_id) is not int or node_id <= 0 for node_id in node_ids)
+        or len(set(node_ids)) != len(node_ids)
+    ):
+        return jsonify({'success': False, 'message': '节点顺序必须是不重复的节点 ID 列表'}), 400
+
+    nodes_by_id = {node.id: node for node in Node.query.all()}
+    if set(node_ids) != set(nodes_by_id):
+        return jsonify({'success': False, 'message': '节点列表已变化，请刷新后重新排序'}), 409
+
+    try:
+        for position, node_id in enumerate(node_ids):
+            nodes_by_id[node_id].order = position
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception('保存节点排序失败')
+        return jsonify({'success': False, 'message': '保存节点排序失败，请重试'}), 500
+    return jsonify({'success': True})
+
+
 @app.route('/api/nodes/batch-delete', methods=['POST'])
 @login_required
 def batch_delete_nodes():

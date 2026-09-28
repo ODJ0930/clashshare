@@ -599,3 +599,11 @@
 .admin-dashboard [style*='color'] { color: #000 !important; }
 .admin-dashboard :is(.node-selection, .user-node-selection) > div[style*='background'] { background: #fff !important; border-color: #000 !important; }
 .admin-dashboard .modal-content { border: 2px solid #000; }
+
+/* 节点拖拽排序 */
+.admin-dashboard .node-order-help { margin: 12px 16px; color: var(--muted); font-size: 13px; }
+.admin-dashboard #nodeOrderStatus { margin-left: 12px; }
+.admin-dashboard .node-drag-handle { display: inline-block; padding: 4px 8px; cursor: grab; user-select: none; font-size: 20px; vertical-align: middle; }
+.admin-dashboard .node-drag-handle:active { cursor: grabbing; }
+.admin-dashboard #nodes-table .node-dragging { opacity: .45; background: #eef2ff; }
+.admin-dashboard #nodes-table[aria-busy="true"] .node-drag-handle { cursor: wait; }
