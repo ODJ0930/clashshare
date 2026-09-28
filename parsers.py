@@ -397,9 +397,13 @@ class ProxyParser:
         - ss://base64(method:password)@server:port#name
         - ss://base64(method:password@server:port)#name
         - ss://base64(method:password)@server:port?params#name (SIP002)
+        - ss://method:password@server:port?params#name (明文 userinfo)
         - 支持 Shadowsocks 2022 (2022-blake3-aes-256-gcm 等)
         """
         try:
+            url = url.strip()
+            if url.startswith(r'ss\://'):
+                url = 'ss://' + url[6:]
             if not url.startswith('ss://'):
                 return None
             
@@ -409,7 +413,7 @@ class ProxyParser:
             name = "SS节点"
             if '#' in url:
                 url, name = url.split('#', 1)
-                name = urllib.parse.unquote(name)
+                name = urllib.parse.unquote(name) or 'SS节点'
             
             # 分离 URL 参数 (SIP002 格式)
             params = {}
@@ -417,78 +421,43 @@ class ProxyParser:
                 url, params_str = url.split('?', 1)
                 params = urllib.parse.parse_qs(params_str)
             
-            # 解码 base64
+            # 明文 userinfo 只拆分第一个冒号，保留 SS 2022 的多段密钥。
             if '@' in url:
-                # 新格式: base64部分@server:port
-                parts = url.split('@', 1)
-                if len(parts) == 2:
-                    base64_part = parts[0]
-                    server_port = parts[1]
-                    
-                    # URL 解码（处理 %3D 等编码字符）
-                    base64_part = urllib.parse.unquote(base64_part)
-                    
-                    # 添加 padding 并解码
-                    padding = '=' * (4 - len(base64_part) % 4)
-                    if padding == '====':
-                        padding = ''
-                    
-                    try:
-                        decoded = base64.b64decode(base64_part + padding).decode('utf-8')
-                    except:
-                        # 尝试 URL-safe base64
-                        try:
-                            decoded = base64.urlsafe_b64decode(base64_part + padding).decode('utf-8')
-                        except:
-                            # 如果仍然失败，可能不需要 padding
-                            try:
-                                decoded = base64.b64decode(base64_part).decode('utf-8')
-                            except:
-                                decoded = base64.urlsafe_b64decode(base64_part).decode('utf-8')
-                    
-                    # 解析 method:password
-                    if ':' in decoded:
-                        method, password = decoded.split(':', 1)
-                    else:
-                        return None
-                    
-                    # 解析 server:port
-                    if ':' in server_port:
-                        server, port = server_port.rsplit(':', 1)
-                    else:
-                        return None
-                else:
-                    # 旧格式: 全部base64编码
-                    padding = '=' * (4 - len(url) % 4)
-                    if padding == '====':
-                        padding = ''
-                    
-                    decoded = base64.b64decode(url + padding).decode('utf-8')
-                    if '@' not in decoded:
-                        return None
-                    method_password, server_port = decoded.split('@', 1)
-                    method, password = method_password.split(':', 1)
-                    server, port = server_port.rsplit(':', 1)
+                userinfo, server_port = url.rsplit('@', 1)
+                # 兼容复制时对分隔符 @ 添加的反斜杠。
+                if userinfo.endswith('\\'):
+                    userinfo = userinfo[:-1]
+                userinfo = urllib.parse.unquote(userinfo)
+                if ':' not in userinfo:
+                    userinfo = base64.b64decode(
+                        userinfo + '=' * (-len(userinfo) % 4),
+                        altchars=b'-_', validate=True
+                    ).decode('utf-8')
             else:
                 # 旧格式: 全部base64编码
-                padding = '=' * (4 - len(url) % 4)
-                if padding == '====':
-                    padding = ''
-                    
-                decoded = base64.b64decode(url + padding).decode('utf-8')
+                encoded = urllib.parse.unquote(url)
+                decoded = base64.b64decode(
+                    encoded + '=' * (-len(encoded) % 4),
+                    altchars=b'-_', validate=True
+                ).decode('utf-8')
                 if '@' not in decoded:
                     return None
-                method_password, server_port = decoded.split('@', 1)
-                method, password = method_password.split(':', 1)
-                server, port = server_port.rsplit(':', 1)
+                userinfo, server_port = decoded.rsplit('@', 1)
+
+            method, password = userinfo.split(':', 1)
+            endpoint = urllib.parse.urlsplit('ss://' + server_port)
+            server, port = endpoint.hostname, endpoint.port
+            if (not method.strip() or not password or not server or not port
+                    or endpoint.path not in ('', '/')):
+                return None
             
             node = {
                 'name': name,
                 'type': 'ss',
-                'server': server.strip(),
-                'port': int(port.strip()),
+                'server': server,
+                'port': port,
                 'cipher': method.strip(),
-                'password': password.strip(),
+                'password': password,
             }
             
             # 处理 URL 参数 (SIP002 格式)
@@ -602,9 +571,7 @@ class ProxyParser:
             
             return node
         except Exception as e:
-            print(f"解析 SS 链接失败: {e}, URL: {url[:100]}")
-            import traceback
-            traceback.print_exc()
+            print(f"解析 SS 链接失败: {e}")
             return None
     
     @staticmethod
@@ -1243,7 +1210,7 @@ class ProxyParser:
         """解析代理链接，自动识别协议类型"""
         url = url.strip()
         
-        if url.startswith('ss://'):
+        if url.startswith(('ss://', r'ss\://')):
             return ProxyParser.parse_ss(url)
         elif url.startswith('ssr://'):
             return ProxyParser.parse_ssr(url)
@@ -1374,4 +1341,3 @@ class ProxyParser:
                 proxies.append(proxy)
         
         return proxies
-
