@@ -5,17 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>管理面板 - Clash 订阅管理系统</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260928-3">
 </head>
-<body>
+<body class="admin-dashboard">
     <div class="dashboard">
         <!-- 侧边栏 -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <h2>🚀 Clash 管理</h2>
+                <h2><span class="brand-mark" data-lucide="network" aria-hidden="true"></span>ClashShare</h2>
                 <p class="admin-name">👤 {{ session.username }}</p>
             </div>
             
             <nav class="sidebar-nav">
+                <div class="nav-section-label">工作空间</div>
                 <a href="#overview" class="nav-item active" data-tab="overview">
                     <span class="icon">📊</span>
                     <span>概览</span>
@@ -57,6 +59,10 @@
         
         <!-- 主内容区 -->
         <main class="main-content">
+            <header class="workspace-header">
+                <div class="workspace-breadcrumb"><span>ClashShare</span><span class="breadcrumb-divider">/</span><span>管理控制台</span></div>
+                <span class="workspace-account"><span data-lucide="circle-user-round" aria-hidden="true"></span>管理员</span>
+            </header>
             <!-- 概览 -->
             <div id="overview-tab" class="tab-content active">
                 <h1>📊 数据概览</h1>
@@ -118,7 +124,7 @@
                 </div>
                 
                 <div class="table-container">
-                    <table id="subscriptions-table">
+                    <table id="subscriptions-table" class="record-grid">
                         <thead>
                             <tr>
                                 <th>分组名称</th>
@@ -137,7 +143,7 @@
             <div id="nodes-tab" class="tab-content">
                 <div class="tab-header">
                     <h1>🌐 节点管理</h1>
-                    <div>
+                    <div class="header-actions">
                         <button class="btn btn-danger" id="batchDeleteBtn" onclick="batchDeleteNodes()" style="display: none;">🗑️ 批量删除</button>
                         <button class="btn btn-success" onclick="showBatchImportModal()">📥 批量导入</button>
                         <button class="btn btn-info" onclick="showManualCreateNodeModal()">✏️ 手动创建</button>
@@ -146,7 +152,7 @@
                 </div>
                 
                 <div class="table-container">
-                    <table id="nodes-table">
+                    <table id="nodes-table" class="record-grid">
                         <thead>
                             <tr>
                                 <th style="width: 40px;">
@@ -177,7 +183,7 @@
                 </div>
                 
                 <div class="table-container">
-                    <table id="users-table">
+                    <table id="users-table" class="record-grid">
                         <thead>
                             <tr>
                                 <th style="width: 42px;"></th>
@@ -201,7 +207,7 @@
             <div id="templates-tab" class="tab-content">
                 <div class="tab-header">
                     <h1>📝 模板管理</h1>
-                    <div>
+                    <div class="header-actions">
                         <button class="btn btn-success" onclick="showImportTemplateModal()">📤 导入配置文件</button>
                         <button class="btn btn-primary" onclick="showAddTemplateModal()">➕ 创建模板</button>
                     </div>
@@ -212,7 +218,7 @@
                 </div>
                 
                 <div class="table-container">
-                    <table id="templates-table">
+                    <table id="templates-table" class="record-grid">
                         <thead>
                             <tr>
                                 <th>模板名称</th>
@@ -248,7 +254,7 @@
                 </div>
                 
                 <div class="table-container">
-                    <table id="relay-nodes-table">
+                    <table id="relay-nodes-table" class="record-grid">
                         <thead>
                             <tr>
                                 <th>链式节点名称</th>
@@ -922,9 +928,9 @@
                     </div>
                 </div>
                 
-                <div class="info-box" style="margin-top: 15px; background: #e8f5e9;">
+                <div class="info-box" style="margin-top: 15px;">
                     <p style="margin: 0; font-weight: bold;">
-                        📊 将生成 <span id="relayGenerateCount" style="color: #4caf50; font-size: 18px;">0</span> 个链式节点
+                        📊 将生成 <span id="relayGenerateCount" style="font-size: 18px;">0</span> 个链式节点
                     </p>
                 </div>
             </div>
@@ -1189,5 +1195,8 @@
     </div>
     
     <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=shadowrocket-subscription-20260717-1"></script>
+    <script src="{{ url_for('static', filename='js/vendor/lucide.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/node-country.js') }}?v=20260928-2"></script>
+    <script src="{{ url_for('static', filename='js/dashboard-presentation.js') }}?v=20260928-2"></script>
 </body>
 </html>
